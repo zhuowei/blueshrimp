@@ -44,12 +44,18 @@ async def main():
         print("open dlc!!!!!!!")
         await asyncio.sleep(0.5)
         await channel.disconnect()
+        await asyncio.sleep(0.5)
         channel = await rfcomm_mux.open_dlc(4)
-        #await channel.disconnect()
         await asyncio.sleep(0.5)
         device.sdp_server.send_response(
             sdp.SDP_ErrorResponse(
                 transaction_id=requests[0].transaction_id,
+                error_code=sdp.SDP_INVALID_SERVICE_RECORD_HANDLE_ERROR,
+            ))
+        await asyncio.sleep(0.5)
+        device.sdp_server.send_response(
+            sdp.SDP_ErrorResponse(
+                transaction_id=requests[1].transaction_id,
                 error_code=sdp.SDP_INVALID_SERVICE_RECORD_HANDLE_ERROR,
             ))
         await asyncio.sleep(4)

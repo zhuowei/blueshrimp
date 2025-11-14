@@ -1,8 +1,8 @@
 Proof-of-concept for [CVE-2025-48593](https://source.android.com/docs/security/bulletin/2025-11-01) based on examining the [patch](https://android.googlesource.com/platform/packages/modules/Bluetooth/+/b8153e05d0b9224feb0ace8c24eeeadc80e4dffc). (Maybe? I can't get anything obviously exploitable.)
 
-You shouldn't worry about this. As far as I can tell, phones are **NOT** vulnerable to CVE-2025-48593. The issue only affects devices that support acting as Bluetooth headphones / speakers, such as smartwatches, smart glasses, or cars. In addition, an attacker has to get a victim to pair to the attacker before they can access the headset service. As long as you don't accept the pairing request on your smartwatch/glasses/car, you should be fine.
+You shouldn't worry about this. As far as I can tell, phones are **NOT** vulnerable to CVE-2025-48593. The issue only affects Android devices that support acting as Bluetooth headphones / speakers, such as some smartwatches, smart glasses, and cars. In addition, an attacker has to get a victim to [pair](https://cs.android.com/android/platform/superproject/main/+/main:packages/modules/Bluetooth/system/bta/hf_client/bta_hf_client_rfc.cc;l=192;drc=86d90eee9dd37eccdd19449b9d72b883df060f9b) to the attacker before they can access the headset service. As long as you don't accept the pairing request on your smartwatch/glasses/car, you should be fine.
 
-This isn't useful for anything: it doesn't work on real devices, and only crashes specially modified Android Emulator.
+This proof-of-concept isn't useful for anything: it doesn't work on real devices, and only crashes specially modified Android Emulators.
 
 ## Results
 
@@ -83,7 +83,7 @@ I have not tested this on a physical device.
 
 Bluetooth headphones use the [Handsfree Profile](<https://en.wikipedia.org/wiki/List_of_Bluetooth_profiles#Hands-Free_Profile_(HFP)>).
 
-Handsfree Profile is special: unlike most other Bluetooth services, where one side acts as a client and one side acts as a server, both the headset and the connecting device (e.g. a phone) need to run a Bluetooth server.
+Handsfree Profile is special: unlike most Bluetooth services, where one side acts as a client and one side acts as a server, both the headset and the connecting device (e.g. a phone) need to run a Bluetooth server.
 
 After the phone connects to the headset's Handsfree service (0x111e), the headset then connects back to the phone's Handsfree Audio Gateway service (0x111f).
 

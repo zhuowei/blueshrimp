@@ -17,5 +17,6 @@ Then
 python3 -m venv env
 . env/bin/activate
 pip install bumble
+bumble-pair --mode classic device.json android-netsim DA:4C:10:DE:17:00
 python3 blueshrimp.py
 ```

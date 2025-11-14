@@ -1,6 +1,8 @@
-Proof-of-concept for [CVE-2025-48593](https://source.android.com/docs/security/bulletin/2025-11-01) based on examining the [patch](https://android.googlesource.com/platform/packages/modules/Bluetooth/+/b8153e05d0b9224feb0ace8c24eeeadc80e4dffc).
+Maybe a Proof-of-concept for [CVE-2025-48593](https://source.android.com/docs/security/bulletin/2025-11-01) based on examining the [patch](https://android.googlesource.com/platform/packages/modules/Bluetooth/+/b8153e05d0b9224feb0ace8c24eeeadc80e4dffc)?
 
 You shouldn't worry about this: as far as I can tell, phones are **NOT** vulnerable to CVE-2025-48593. This only affects devices that support acting as Bluetooth headphones / speakers, such as smartwatches, smart glasses, or cars. In addition, an attacker has to get a victim to pair to the attacker before they can access the headset service. As long as you don't accept the pairing request on your smartwatch/glasses/car, you should be fine.
+
+I'm not sure if this proof-of-concept actually hits the exploitable code path, since I only get a null deference or an attempted write into the library's read-only data section.
 
 After forcing the emulator to act as a Bluetooth speaker, running this code gives a null deference:
 
@@ -35,6 +37,42 @@ backtrace:
       #03 pc 00000000009f45cc  /apex/com.android.btservices/lib64/libbluetooth_jni.so (l2c_csm_execute(t_l2c_ccb*, tL2CEVT, void*)+12968) (BuildId: 6f08819253185bc44c9fec07ed93c598)
 ```
 
+With [malloc_debug](https://android.googlesource.com/platform/bionic/+/master/libc/malloc_debug/README.md) set to fill on free, I get:
+
+```
+*** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+Build fingerprint: 'google/sdk_gphone64_arm64/emu64a:15/AE3A.240806.043/12960925:userdebug/dev-keys'
+Revision: '0'
+ABI: 'arm64'
+Timestamp: 2025-11-13 22:44:39.509419570-0500
+Process uptime: 0s
+Cmdline: com.google.android.bluetooth
+pid: 7391, tid: 7422, name: bt_main_thread  >>> com.google.android.bluetooth <<<
+uid: 1002
+tagged_addr_ctrl: 0000000000000001 (PR_TAGGED_ADDR_ENABLE)
+pac_enabled_keys: 000000000000000f (PR_PAC_APIAKEY, PR_PAC_APIBKEY, PR_PAC_APDAKEY, PR_PAC_APDBKEY)
+signal 11 (SIGSEGV), code 2 (SEGV_ACCERR), fault addr 0xb4000076954f3000
+    x0  b4000076954f3002  x1  b4000076954e48a8  x2  000000000000ebeb  x3  000000764031dd58
+    x4  0000000000000004  x5  68746f6f7465756c  x6  68746f6f7465756c  x7  b4000076f54d5ad9
+    x8  b4000076954f2fff  x9  000000000000d78b  x10 0000000000000009  x11 0000000000000009
+    x12 000000000000d78b  x13 0000000000000008  x14 0000000000000004  x15 000006b7ae6ad944
+    x16 0000000000000001  x17 000000794c270af0  x18 0000007578ca8070  x19 000000757e7cff58
+    x20 0000000000000000  x21 0000000000000000  x22 b4000076954c9950  x23 0000000000000043
+    x24 000000764031ea80  x25 b4000076954c9965  x26 b4000076954c9968  x27 000000764031ea80
+    x28 000000764031df70  x29 000000764031ddb0
+    lr  000000757e569d30  sp  000000764031dd50  pc  000000757e56ec08  pst 0000000080001000
+
+17 total frames
+backtrace:
+      #00 pc 000000000096ac08  /apex/com.android.btservices/lib64/libbluetooth_jni.so (sdpu_build_attrib_seq(unsigned char*, unsigned short*, unsigned short)+112) (BuildId: 6f08819253185bc44c9fec07ed93c598)
+      #01 pc 0000000000965d2c  /apex/com.android.btservices/lib64/libbluetooth_jni.so (process_service_search_attr_rsp(tCONN_CB*, unsigned char*, unsigned char*)+340) (BuildId: 6f08819253185bc44c9fec07ed93c598)
+      #02 pc 0000000000965494  /apex/com.android.btservices/lib64/libbluetooth_jni.so (sdp_config_cfm(unsigned short, unsigned short, tL2CAP_CFG_INFO*)+248) (BuildId: 6f08819253185bc44c9fec07ed93c598)
+      #03 pc 00000000009f7364  /apex/com.android.btservices/lib64/libbluetooth_jni.so (l2c_csm_indicate_connection_open(t_l2c_ccb*)+220) (BuildId: 6f08819253185bc44c9fec07ed93c598)
+      #04 pc 00000000009f346c  /apex/com.android.btservices/lib64/libbluetooth_jni.so (l2c_csm_execute(t_l2c_ccb*, tL2CEVT, void*)+8520) (BuildId: 6f08819253185bc44c9fec07ed93c598)
+      #05 pc 00000000009fe380  /apex/com.android.btservices/lib64/libbluetooth_jni.so (process_l2cap_cmd(t_l2c_linkcb*, unsigned char*, unsigned short)+376) (BuildId: 6f08819253185bc44c9fec07ed93c598)
+      #06 pc 00000000009fdf64  /apex/com.android.btservices/lib64/libbluetooth_jni.so (l2c_rcv_acl_data(BT_HDR*)+624) (BuildId: 6f08819253185bc44c9fec07ed93c598)
+```
+
 ## Running
 
 To make Android Emulator emulate a Bluetooth headphone:
@@ -45,6 +83,8 @@ Start a local Android Emulator for Android 15 in Android Studio. (I'm using Andr
 adb root
 adb shell
 setprop bluetooth.profile.hfp.hf.enabled true
+# optionally:
+# setprop wrap.com.google.android.bluetooth "LIBC_DEBUG_MALLOC_OPTIONS=fill\ verbose"
 am force-stop com.google.android.bluetooth
 ```
 
@@ -57,6 +97,7 @@ pip install bumble
 bumble-pair --mode classic device.json android-netsim DA:4C:10:DE:17:00
 # accept pairing in terminal and in emulator, then Ctrl+C after pairing completes
 python3 blueshrimp.py
+# you may need to run it twice for some reason...
 ```
 
 ## Tools

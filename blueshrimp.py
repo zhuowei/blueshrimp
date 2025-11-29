@@ -63,7 +63,6 @@ async def main():
         device = Device.from_config_file_with_hci(device_config, hci_source,
                                                   hci_sink)
         device.classic_enabled = True
-        channel = 3
         configuration = _default_configuration()
 
         ag_sdp_record_handle = 0x00010001
@@ -88,6 +87,12 @@ async def main():
             address, transport=core.PhysicalTransport.BR_EDR)
         await connection.encrypt()
 
+        hfp_record = await hfp.find_hf_sdp_record(connection)
+        if hfp_record is None:
+            print("target device doesn't support Headset Client")
+            return
+        hfp_channel_id = hfp_record[0]
+
         avrcp_protocol = avrcp.Protocol()
         avrcp_protocol.listen(device)
         await avrcp_protocol.connect(connection)
@@ -104,12 +109,12 @@ async def main():
 
         rfcomm_client = rfcomm.Client(connection)
         rfcomm_mux = await rfcomm_client.start()
-        channel = await rfcomm_mux.open_dlc(4)
+        channel = await rfcomm_mux.open_dlc(hfp_channel_id)
         print("open dlc!!!!!!!")
         await asyncio.sleep(0.5)
         await channel.disconnect()
         await asyncio.sleep(0.5)
-        channel = await rfcomm_mux.open_dlc(4)
+        channel = await rfcomm_mux.open_dlc(hfp_channel_id)
         await asyncio.sleep(0.5)
         device.sdp_server.send_response(
             sdp.SDP_ErrorResponse(

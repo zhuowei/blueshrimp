@@ -85,6 +85,7 @@ async def main():
         await device.power_on()
         connection = await device.connect(
             address, transport=core.PhysicalTransport.BR_EDR)
+        await connection.authenticate()
         await connection.encrypt()
 
         hfp_record = await hfp.find_hf_sdp_record(connection)

@@ -1,12 +1,60 @@
-Proof-of-concept for [CVE-2025-48593](https://source.android.com/docs/security/bulletin/2025-11-01) based on examining the [patch](https://android.googlesource.com/platform/packages/modules/Bluetooth/+/b8153e05d0b9224feb0ace8c24eeeadc80e4dffc). (Maybe? I can't get anything obviously exploitable.)
+Proof-of-concept for [CVE-2025-48593](https://source.android.com/docs/security/bulletin/2025-11-01) based on examining the [patch](https://android.googlesource.com/platform/packages/modules/Bluetooth/+/b8153e05d0b9224feb0ace8c24eeeadc80e4dffc).
 
 You shouldn't worry about this. As far as I can tell, phones are **NOT** vulnerable to CVE-2025-48593. The issue only affects Android devices that support acting as Bluetooth headphones / speakers, such as some smartwatches, smart glasses, and cars. In addition, an attacker has to get a victim to [pair](https://cs.android.com/android/platform/superproject/main/+/main:packages/modules/Bluetooth/system/bta/hf_client/bta_hf_client_rfc.cc;l=192;drc=86d90eee9dd37eccdd19449b9d72b883df060f9b) to the attacker before they can access the headset service. As long as you don't accept the pairing request on your smartwatch/glasses/car, you should be fine.
 
-This proof-of-concept isn't useful for anything: it doesn't work on real devices, and only crashes specially modified Android Emulators.
+This proof-of-concept isn't useful for anything: it only crashes the Android Automotive emulator with a `fault addr 0x4141414141414141`.
+
+You can read [my writeup](https://worthdoingbadly.com/bluetooth/) on my blog.
 
 ## Results
 
-I'm not sure if this proof-of-concept actually hits the exploitable code path, since I only get a null deference or an attempted write into the library's read-only data section.
+When running against the Android Automotive 14 emulator in Android Studio, [I get](https://youtu.be/tpJv3p89FHA):
+
+```
+*** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+Build fingerprint: 'google/sdk_gcar_arm64/emulator_car64_arm64:14/UAA1.250512.001/13479943:userdebug/dev-keys'
+Revision: '0'
+ABI: 'arm64'
+Timestamp: 2025-12-01 17:28:17.644347763-0500
+Process uptime: 0s
+Cmdline: com.google.android.bluetooth
+pid: 6386, tid: 6424, name: bt_main_thread  >>> com.google.android.bluetooth <<<
+uid: 1001002
+tagged_addr_ctrl: 0000000000000001 (PR_TAGGED_ADDR_ENABLE)
+pac_enabled_keys: 000000000000000f (PR_PAC_APIAKEY, PR_PAC_APIBKEY, PR_PAC_APDAKEY, PR_PAC_APDBKEY)
+signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x4141414141414141
+    x0  4141414141414141  x1  b4000073106a14a0  x2  0000000000000103  x3  414141414141413e
+    x4  b4000073106a15a3  x5  4141414141414241  x6  0000000000000100  x7  000000000000010f
+    x8  0000000000000000  x9  4141414141414141  x10 0000000000000002  x11 00000070c20c8558
+    x12 0000000000000018  x13 00000000ffffffbf  x14 0000000000000003  x15 0000000000000001
+    x16 00000070c253f470  x17 00000073f6ee3a40  x18 00000070bb2c6060  x19 00000070c258c0c0
+    x20 b4000073106a14a3  x21 0000000000000100  x22 00000070bc384000  x23 000000004141413e
+    x24 00000070bc384000  x25 00000070bc384000  x26 00000070bc383ff8  x27 00000000000fc000
+    x28 00000000000fe000  x29 00000070bc383470
+    lr  00000070c20c3d58  sp  00000070bc383460  pc  00000073f6ee3b38  pst 00000000a0001000
+
+15 total frames
+backtrace:
+      #00 pc 000000000005fb38  /apex/com.android.runtime/lib64/bionic/libc.so (__memcpy_aarch64_simd+248) (BuildId: 8bd98d931a32d13659267d7d53286e73)
+      #01 pc 00000000006aad54  /apex/com.android.btservices/lib64/libbluetooth_jni.so (sdp_copy_raw_data(tCONN_CB*, bool)+344) (BuildId: fe3c1bf88cf688f5197df2b2f326f723)
+      #02 pc 00000000006aa0c0  /apex/com.android.btservices/lib64/libbluetooth_jni.so (process_service_search_attr_rsp(tCONN_CB*, unsigned char*, unsigned char*)+624) (BuildId: fe3c1bf88cf688f5197df2b2f326f723)
+      #03 pc 00000000006a9760  /apex/com.android.btservices/lib64/libbluetooth_jni.so (sdp_data_ind(unsigned short, BT_HDR*)+212) (BuildId: fe3c1bf88cf688f5197df2b2f326f723)
+      #04 pc 00000000007387b4  /apex/com.android.btservices/lib64/libbluetooth_jni.so (l2c_csm_execute(t_l2c_ccb*, tL2CEVT, void*)+9412) (BuildId: fe3c1bf88cf688f5197df2b2f326f723)
+      #05 pc 00000000009d6ce8  /apex/com.android.btservices/lib64/libbluetooth_jni.so (base::debug::TaskAnnotator::RunTask(char const*, base::PendingTask*)+196) (BuildId: fe3c1bf88cf688f5197df2b2f326f723)
+      #06 pc 00000000009d6260  /apex/com.android.btservices/lib64/libbluetooth_jni.so (base::MessageLoop::RunTask(base::PendingTask*)+352) (BuildId: fe3c1bf88cf688f5197df2b2f326f723)
+      #07 pc 00000000009d6574  /apex/com.android.btservices/lib64/libbluetooth_jni.so (base::MessageLoop::DoWork()+452) (BuildId: fe3c1bf88cf688f5197df2b2f326f723)
+      #08 pc 00000000009d8964  /apex/com.android.btservices/lib64/libbluetooth_jni.so (base::MessagePumpDefault::Run(base::MessagePump::Delegate*)+100) (BuildId: fe3c1bf88cf688f5197df2b2f326f723)
+      #09 pc 00000000009e4a34  /apex/com.android.btservices/lib64/libbluetooth_jni.so (base::RunLoop::Run()+64) (BuildId: fe3c1bf88cf688f5197df2b2f326f723)
+      #10 pc 000000000069aaa4  /apex/com.android.btservices/lib64/libbluetooth_jni.so (bluetooth::common::MessageLoopThread::Run(std::__1::promise<void>)+336) (BuildId: fe3c1bf88cf688f5197df2b2f326f723)
+      #11 pc 000000000069a584  /apex/com.android.btservices/lib64/libbluetooth_jni.so (bluetooth::common::MessageLoopThread::RunThread(bluetooth::common::MessageLoopThread*, std::__1::promise<void>)+48) (BuildId: fe3c1bf88cf688f5197df2b2f326f723)
+      #12 pc 000000000069b090  /apex/com.android.btservices/lib64/libbluetooth_jni.so (void* std::__1::__thread_proxy<std::__1::tuple<std::__1::unique_ptr<std::__1::__thread_struct, std::__1::default_delete<std::__1::__thread_struct> >, void (*)(bluetooth::common::MessageLoopThread*, std::__1::promise<void>), bluetooth::common::MessageLoopThread*, std::__1::promise<void> > >(void*)+84) (BuildId: fe3c1bf88cf688f5197df2b2f326f723)
+      #13 pc 00000000000cb6a8  /apex/com.android.runtime/lib64/bionic/libc.so (__pthread_start(void*)+208) (BuildId: 8bd98d931a32d13659267d7d53286e73)
+      #14 pc 000000000006821c  /apex/com.android.runtime/lib64/bionic/libc.so (__start_thread+64) (BuildId: 8bd98d931a32d13659267d7d53286e73)
+```
+
+## More results
+
+These are from my [original proof-of-concept](https://github.com/zhuowei/blueshrimp/tree/first-poc) before I figured out how to reallocate the buffer:
 
 After forcing an Android 15 emulator to act as a Bluetooth speaker, running this code gives a null deference:
 
@@ -133,7 +181,9 @@ What I don't understand:
 
 ## Running
 
-To make Android Emulator emulate a Bluetooth headphone:
+Create an Android Studio emulator with Android Automotive 14, API 34-ext9, "Android Automotive with Google APIs arm64-v8a System Image", version 5 - this has Headset Client enabled out-of-the-box.
+
+Alternatively, to make non-Automotive Android Emulator emulate a Bluetooth headphone:
 
 Start a local Android Emulator for Android 15 in Android Studio. (I'm using Android Emulator for Android 15, "Google APIs ARM 64 v8a System Image", version 9)
 
@@ -300,6 +350,14 @@ Traceback (most recent call last):
 bumble.core.InvalidStateError: channel not open
 (env) zhuowei-laptop:blueshrimp zhuowei$
 ```
+
+## Notes on physical Bluetooth USB adapters
+
+I'm using a TP-Link UB400 v2.6 (RTL8761BU) with Bumble on macOS.
+
+I originally tried the ASUS USB-BT500 v2 adapter (RTL8761CU) and found it doesn't work with Bumble on macOS. When Bumble tries to establish an L2CAP connection, the target device receives the connection request packet and sends a response, but the USB-BT500 v2 doesn't receive the response at all, and the connection fails.
+
+(The ASUS USB-BT500 v2 works fine on Linux with Bumble.)
 
 ## Tools
 

